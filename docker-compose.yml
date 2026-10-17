@@ -1,12 +1,10 @@
-# tModLoader + Calamity 2.0.5 容器
-#
 # 使用前修改：
-#   1. 把 /home/xdc 换成你的实际用户主目录
-#   2. /run/user/1000 里的 1000 换成你的实际 UID
-#   3. group_add 里的 992/44 换成 `getent group render video` 的实际 GID
-#   4. 代理端口 7890 换成你的实际值，不用代理可删掉整段代理环境变量
-#   5. WAYLAND_DISPLAY 按 `echo $WAYLAND_DISPLAY` 的结果改；X11 用户删掉
-#      这行并把 SDL_VIDEODRIVER 改为 x11
+#   1. /home/xdc → 你的主目录
+#   2. /run/user/1000 里的 1000 → 你的 UID
+#   3. group_add 里 992/44 → `getent group render video` 的实际 GID
+#   4. 代理端口 7890 → 你的实际值，不用代理可整段删除
+#   5. WAYLAND_DISPLAY → `echo $WAYLAND_DISPLAY`；X11 用户删这行并把
+#      SDL_VIDEODRIVER 改成 x11
 services:
   tmodloader:
     build:
@@ -18,16 +16,16 @@ services:
     container_name: tmodloader
     user: "${HOST_UID}:${HOST_GID}"
     environment:
-      # ── 显示 ──
+      # 显示
       - DISPLAY=${DISPLAY}
       - WAYLAND_DISPLAY=wayland-1
       - XDG_RUNTIME_DIR=/run/user/1000
       - SDL_VIDEODRIVER=wayland
       - HOME=/data
       - XAUTHORITY=/data/.Xauthority
-      # ── 音频 ──
+      # 音频
       - PULSE_SERVER=unix:/run/user/1000/pulse/native
-      # ── 代理（Clash Verge Rev 混合端口）──
+      # 代理（Clash Verge Rev 混合端口）
       - http_proxy=http://127.0.0.1:7890
       - https_proxy=http://127.0.0.1:7890
       - all_proxy=socks5://127.0.0.1:7890
@@ -49,18 +47,19 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       # Wayland socket + PulseAudio（整个 runtime 目录）
       - /run/user/1000:/run/user/1000
-      # X11 认证文件（Wayland 环境可删；X11 环境必需）
+      # X11 认证文件（Wayland 环境可删）
       - /home/xdc/.Xauthority:/data/.Xauthority:ro
-      # GOG 版 Terraria（只读挂载，容器绝不修改主机文件）
+      # GOG 版 Terraria（只读挂载）
       - /home/xdc/Documents/Calamity/Terraria/game:/opt/terraria-gog:ro
-      # 持久化数据（存档、模组、Content 副本）
+      # tModLoader 本体（宿主机目录，挂载进来，不再打进镜像）
+      - ./tmodloader:/opt/tmod
+      # 持久化数据（存档、Content 副本）
       - ./data:/data
-      # .NET 运行时缓存（避免每次重新下载）
+      # .NET 运行时缓存（叠加在 /opt/tmod 之上）
       - ./dotnet:/opt/tmod/dotnet
-      # 日志（方便排查）
+      # 日志（叠加在 /opt/tmod 之上）
       - ./logs:/opt/tmod/tModLoader-Logs
     working_dir: /opt/tmod
-    # host 网络让 127.0.0.1:7890 能直接访问主机的 Clash
     network_mode: host
     stdin_open: true
     tty: true
