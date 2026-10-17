@@ -17,18 +17,19 @@ Run **tModLoader 1.4.4 client** + **Calamity 2.0.5** inside a Docker container,
 fully isolated from the host's Steam installation, with saves persisted to a
 host directory.
 
-**Target environment**: Debian trixie + niri (Wayland) + Intel Iris Xe / NVIDIA hybrid GPU.
-Other distros / desktop environments may need adjustments —
-see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+This setup uses **host-mount mode**. tModLoader is not baked into the image.
+Instead, you mount the tModLoader directory from your host. This means upgrading
+tModLoader requires only replacing files on the host, without rebuilding the image.
+
+**Target environment**: Debian trixie + Wayland (e.g., niri) + Intel iGPU.
 
 ## Features
 
 - ✅ **No Steam dependency**: tModLoader runs with `-nosteam`, no Steam inside the container
 - ✅ **Persistent saves**: `./data/` is bind-mounted to the host, survives container deletion
-- ✅ **Version pinning**: tModLoader and mods are baked into the image, no auto-update
-- ✅ **GPU acceleration**: DRI passthrough + native Wayland, avoids XWayland software rendering
+- ✅ **Easy version switching**: Upgrade tModLoader by replacing host files + `docker compose restart`
+- ✅ **GPU acceleration**: DRI passthrough + native Wayland
 - ✅ **Proxy support**: container `http_proxy` points to host Clash (`network_mode: host`)
-- ✅ **No mod downloads**: local `.tmod` files baked into the image, no Workshop access
 
 ## Requirements
 
@@ -37,55 +38,38 @@ see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 | Host OS | Linux with Docker + docker-compose |
 | Docker | 20.10+ with compose v2 |
 | Desktop | Wayland (recommended) or X11 |
-| GPU | Intel iGPU (Mesa) preferred; NVIDIA dGPU see note below |
-| Host files | GOG Terraria 1.4.4 installer, tModLoader.zip, Calamity mods |
+| GPU | Intel iGPU (Mesa) preferred |
+| Host files | GOG Terraria 1.4.4, tModLoader zip, Calamity mods |
 
 ## Directory Layout
 
-```
+```text
 .
 ├── build/                # Build inputs (.gitignore excludes copyrighted files)
-│   ├── tModLoader.zip         ← download yourself
-│   ├── terraria_*.sh          ← GOG installer (optional)
-│   ├── CalamityMod2.0.5.tmod          ← prepare yourself
-│   ├── CalamityModMusic2.0.5.tmod     ← prepare yourself
-│   └── CalamityCN2.0.5.tmod           ← prepare yourself
-├── data/                 # Persistent data (.gitignore excluded)
-│   ├── Content/             ← copied on first launch
-│   ├── .local/share/Terraria/tModLoader/   ← worlds, players, ModConfigs
-│   ├── .cache/
-│   └── .runtime/
-├── dotnet/               # .NET 8 runtime cache (.gitignore excluded)
-├── logs/                 # tModLoader logs (.gitignore excluded)
+├── tmodloader/           # tModLoader client (Extracted here on host)
+├── data/                 # Persistent data (saves, mods, Content)
+├── dotnet/               # .NET runtime cache
+├── logs/                 # tModLoader logs
 ├── Dockerfile
 ├── docker-compose.yml
 ├── .env.example
 └── docs/
-    └── TROUBLESHOOTING.md
 ```
 
 ## Quick Start
 
 ### 1. Obtain the required files
 
-**tModLoader client** (1.4.4, targeting `.NET 8`):
-- Download the Linux client package from tModLoader's official GitHub release or forum
-- The unzipped directory should contain `start-tModLoader.sh`, `tModLoader.dll`, `LaunchUtils/`, etc.
-- Place the zip at `build/tModLoader.zip`
+**tModLoader client** (1.4.4):
+- Download the Linux client package from official sources.
+- Extract it directly into `./tmodloader/` on your host.
+- Ensure `LaunchUtils/`, `tModLoader.dll`, etc., are in the root of `tmodloader/`.
 
-**Terraria GOG edition** (1.4.4.9 or matching version):
-- Purchase and download the Linux installer from GOG.com
-- Install to a directory, e.g. `~/Documents/Calamity/Terraria/`
-- Final path should be `~/Documents/Calamity/Terraria/game/` containing
-  `Terraria.exe`, `Content/`, `FNA.dll`, etc.
+**Terraria GOG edition** (1.4.4.9):
+- Install on host, e.g., `~/Documents/Calamity/Terraria/game/`.
 
 **Calamity mods**:
-- Get version 2.0.5 from the tModLoader mod browser (or extract from a Workshop package)
-- Three files needed:
-  - `CalamityMod2.0.5.tmod`
-  - `CalamityModMusic2.0.5.tmod`
-  - `CalamityCN2.0.5.tmod` (Chinese localization)
-- Place all in `build/`
+- Place your `.tmod` files into `data/.local/share/Terraria/tModLoader/Mods/`.
 
 ### 2. Configure environment
 
@@ -93,145 +77,36 @@ see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 cp .env.example .env
 vim .env
 ```
-
-Adjust to your actual values:
-
-```bash
-HOST_UID=1000
-HOST_GID=1000
-```
-
-Verify with `id -u` / `id -g`.
+Set `HOST_UID` and `HOST_GID` (`id -u` / `id -g`).
 
 ### 3. Edit paths in `docker-compose.yml`
 
-**Must edit** these absolute paths (replace `/home/xdc` with your actual home):
-- `/home/xdc/.Xauthority:/data/.Xauthority:ro`
-- `/home/xdc/Documents/Calamity/Terraria/game:/opt/terraria-gog:ro`
-- `/run/user/1000:/run/user/1000`
+**Must edit** paths:
+- Replace `/home/xdc` with your actual home directory.
+- Update `/run/user/1000` with your actual UID.
+- Update `group_add` (992/44) with your actual GIDs (`getent group render video`).
+- (Optional) Update proxy port `7890`.
 
-**Edit as needed**:
-- `WAYLAND_DISPLAY=wayland-1`: get from `echo $WAYLAND_DISPLAY`;
-  X11 users should delete this line
-- `SDL_VIDEODRIVER=wayland`: X11 users change to `x11`
-- Proxy port `7890`: change to your actual port; delete the whole block if you don't use a proxy
-- `group_add` values `992`/`44`: get real GIDs from `getent group render video`
-
-### 4. Prepare directories
+### 4. Prepare directories & Launch
 
 ```bash
-mkdir -p build data dotnet logs
-```
-
-### 5. Build and launch
-
-```bash
-docker compose build
+mkdir -p data dotnet logs
+xhost +SI:localuser:$(whoami) # X11 only
 docker compose up
 ```
 
-**First launch** will:
-- Copy GOG `Content/` to `data/Content/` (a few hundred MB, one-time)
-- Download .NET 8 runtime to `dotnet/` (~30 MB, one-time)
-- Start tModLoader
+## Upgrading tModLoader
 
-### 6. Enable mods
+Because of host-mount mode, no image rebuild is needed:
+1. Delete the contents of `tmodloader/`
+2. Extract the new tModLoader zip into `tmodloader/`
+3. `docker compose restart`
 
-Once the window appears:
-1. Main menu → **Mods**
-2. Check `CalamityMod`, `CalamityModMusic`, `CalamityCN`
-3. Click **Reload Mods**
+## Save Files & Mods
 
-### 7. Stopping
-
-```bash
-docker compose down
-# Wayland: xhost not needed. X11 users may want:
-# xhost -SI:localuser:$(whoami)
-```
-
-## Save Files
-
-**All data** lives under `./data/` on the host:
-
-```
-data/
-├── Content/                                      ← Terraria assets
-└── .local/share/Terraria/tModLoader/
-    ├── Mods/                                     ← mods (.tmod files)
-    ├── Worlds/                                   ← world saves
-    ├── Players/                                  ← player saves
-    ├── ModConfigs/                               ← mod configs
-    └── config.json
-```
-
-**Fully isolated from host Steam**. Steam tModLoader saves live in a Proton
-prefix with a completely different path.
-
-Backup:
-
-```bash
-tar czf tmod-backup-$(date +%F).tar.gz -C data .
-```
-
-## Common Commands
-
-```bash
-docker compose up                     # foreground, shows logs
-docker compose up -d                  # background
-docker compose logs -f                # tail logs
-docker compose exec tmodloader bash   # shell into container
-docker compose restart                # restart
-docker compose build --no-cache       # full rebuild (after Dockerfile changes)
-docker compose down                   # stop and remove (keeps data/)
-```
-
-## Version Locking
-
-| Layer | Mechanism |
-|---|---|
-| tModLoader itself | `COPY build/tModLoader.zip`; version frozen once image is built |
-| Mods | `.tmod` files COPY'd into `Mods-injected/`, copied to `/data` on first launch |
-| Update check | `ScriptCaller.sh -nosteam` skips Steam branch, no Workshop access |
-| .NET runtime | Persisted in `data/dotnet`, version from `runtimeconfig.json` |
-
-**Rebuild image = version change**. No auto-updates during normal use.
-
-## About GPU
-
-This repo defaults to **Intel iGPU + Mesa** (`iris_dri.so`).
-NVIDIA dGPU requires `nvidia-container-toolkit` and Prime Render Offload env
-vars, which is out of scope here.
-
-**Software rendering works without a dGPU**, but is noticeably slow (playable
-for a 2D pixel game, but big worlds + Calamity will drop to 20-30 fps).
-Quick software-render workaround: add to `docker-compose.yml`'s `environment:`:
-
-```yaml
-- LIBGL_ALWAYS_SOFTWARE=1
-- GALLIUM_DRIVER=llvmpipe
-```
-
-## Known Limitations
-
-- **No Steam Workshop**: mods managed manually via `.tmod` files
-- **No Steam Cloud saves**: saves only in `./data/`
-- **No Steam multiplayer**: IP direct connect works, Steam friend join does not
-- **Player name is local**, not your Steam nickname
-- **trixie package names**: `libasound2` → `libasound2t64`,
-  `lib32gcc-s1` has no i386 variant; see Dockerfile comments
-
-## Troubleshooting
-
-See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+Saves are at `./data/.local/share/Terraria/tModLoader/`.
+Fully isolated from host Steam.
 
 ## Disclaimer
 
-This repository **does not contain** any copyrighted Terraria / tModLoader /
-Calamity files. Users must obtain these files from legitimate sources and
-comply with their respective licenses.
-
-## License
-
-Build scripts and config files in this repo are released under the MIT License.
-The game and mods follow their own licenses.
+This repository **does not contain** any copyrighted files.
